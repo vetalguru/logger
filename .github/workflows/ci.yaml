@@ -43,4 +43,4 @@ jobs:
         run: cmake --build build
 
       - name: Run Tests
-        run: ctest --test-dir build --verbose
+        run: ctest --test-dir build/test --verbose

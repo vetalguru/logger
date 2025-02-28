@@ -3,6 +3,14 @@
 #ifndef INCLUDE_LOGGER_HPP_
 #define INCLUDE_LOGGER_HPP_
 
+// Threading support is enabled by default.
+// Define LOGGER_NO_THREAD_SUPPORT before including this file to disable
+// mutex usage.
+#ifndef LOGGER_NO_THREAD_SUPPORT
+#define LOGGER_USE_MUTEX
+#endif
+
+
 #include <chrono>   // NOLINT(build/c++11)
 #include <iostream>
 #include <fstream>
@@ -157,7 +165,9 @@ class Logger{
     }
 
  private:
+#ifdef LOGGER_USE_MUTEX
     std::mutex m_mutex;
+#endif
     std::unique_ptr<std::ofstream> m_logFile;
 };
 

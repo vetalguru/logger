@@ -17,7 +17,15 @@ target_link_libraries(test_logger_message PRIVATE logger gtest_main)
 add_executable(test_logger_stream test_logger_stream.cpp)
 target_link_libraries(test_logger_stream PRIVATE logger gtest_main)
 
+add_executable(test_logger_mutex test_logger_mutex.cpp)
+target_link_libraries(test_logger_mutex PRIVATE logger gtest_main)
+
+add_executable(test_logger_no_mutex test_logger_no_mutex.cpp)
+target_link_libraries(test_logger_no_mutex PRIVATE logger gtest_main)
+
 enable_testing()
 
 add_test(NAME test_logger_message COMMAND test_logger_message)
 add_test(NAME test_logger_stream COMMAND test_logger_stream)
+add_test(NAME test_logger_mutex COMMAND test_logger_mutex)
+add_test(NAME test_logger_no_mutex COMMAND test_logger_no_mutex)

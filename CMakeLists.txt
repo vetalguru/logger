@@ -8,8 +8,8 @@ add_library(logger INTERFACE)
 target_include_directories(logger INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(logger INTERFACE cxx_std_17)
 
-if (NO_THREAD_SUPPORT)
-    target_compile_definitions(logger INTERFACE NO_THREAD_SUPPORT)
+if (NOT NO_THREAD_SUPPORT)
+    target_compile_definitions(logger INTERFACE LOGGER_USE_MUTEX)
 endif()
 
 # Add the tests

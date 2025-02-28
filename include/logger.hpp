@@ -157,7 +157,9 @@ class Logger{
     }
 
  private:
+#ifndef NO_THREAD_SUPPORT
     std::mutex m_mutex;
+#endif
     std::unique_ptr<std::ofstream> m_logFile;
 };
 

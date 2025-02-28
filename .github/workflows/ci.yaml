@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  lint:
+    name: Run cpplint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install cpplint
+        run: pip install cpplint
+
+      - name: Run cpplint
+        run: |
+          cpplint --recursive --extensions=hpp,cpp --exclude=build --exclude=third_party .
+
+  build-and-test:
+    name: Build and Run Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y cmake g++ ninja-build
+
+      - name: Configure CMake
+        run: |
+          mkdir build
+          cd build
+          cmake .. -DBUILD_TESTS=ON -G Ninja
+
+      - name: Build Project
+        run: cmake --build build
+
+      - name: Run Tests
+        run: ctest --test-dir build --verbose

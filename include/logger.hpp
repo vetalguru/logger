@@ -171,6 +171,10 @@ class Logger{
     std::unique_ptr<std::ofstream> m_logFile;
 };
 
+#define LOG_ENABLE_FILE(aFile)  Logger::getInstance().setLogFile(aFile)
+#define LOG_DISABLE_FILE()      Logger::getInstance().setLogFile("")
+
+
 #define LOG_TRACE_MSG(aMsg)     Logger::trace_msg(aMsg)
 #define LOG_DEBUG_MSG(aMsg)     Logger::debug_msg(aMsg)
 #define LOG_INFO_MSG(aMsg)      Logger::info_msg(aMsg)

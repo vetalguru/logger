@@ -10,10 +10,10 @@
 #define LOGGER_USE_MUTEX
 #endif
 
-
 #include <chrono>   // NOLINT(build/c++11)
 #include <iostream>
 #include <fstream>
+#include <functional>
 #include <memory>
 #ifdef LOGGER_USE_MUTEX
 #include <mutex>    // NOLINT(build/c++11)
@@ -25,50 +25,64 @@
 
 class Logger{
  public:
-    enum class LogLevel { TRACE, DEBUG, INFO, WARNING, ERROR, FATAL, };
+    enum class LogLevel { TRACE, DEBUG, INFO, WARNING, ERROR, FATAL };
 
- public:
+    using LogHandler = std::function<void(const std::string&)>;
+
+    struct Target {
+        LogLevel level;
+        LogHandler handler;
+    };
+
     static Logger& getInstance() {
         static Logger instance;
         return instance;
     }
 
-    bool setLogFile(const std::string& aFileName) {
+    bool setLogFile(const std::string& aFileName, LogLevel aLevel = LogLevel::TRACE) {
 #ifdef LOGGER_USE_MUTEX
         std::lock_guard<std::mutex> lock(m_mutex);
 #endif
-        m_logFile = std::make_unique<std::ofstream>(aFileName, std::ios::app);
-        if (!m_logFile || !m_logFile->is_open()) {
-            m_logFile.reset();
+        auto file = std::make_shared<std::ofstream>(aFileName, std::ios::app);
+        if (!file->is_open()) {
             return false;
         }
 
+        addHandler([file](const std::string& aMessage) {
+            (*file) << aMessage << std::endl;
+            file->flush();
+        }, aLevel);
+
         return true;
+    }
+
+    void addHandler(const LogHandler& aHandler, LogLevel aLevel) {
+#ifdef LOGGER_USE_MUTEX
+        std::lock_guard<std::mutex> lock(m_mutex);
+#endif
+        m_targets.push_back({aLevel, aHandler});
     }
 
     void log(LogLevel aLevel, const std::string& aMessage) {
 #ifdef LOGGER_USE_MUTEX
         std::lock_guard<std::mutex> lock(m_mutex);
 #endif
-        std::string logMessage = formatMessage(aLevel, aMessage);
-
-        // Print to console
-        if (aLevel == LogLevel::ERROR || aLevel == LogLevel::FATAL) {
-            std::cerr << logMessage << std::endl;
-        } else {
-            std::cout << logMessage << std::endl;
+        if (!shouldLog(aLevel)) {
+            return;
         }
 
-        // Print to file
-        if (m_logFile && m_logFile->is_open()) {
-            *m_logFile << logMessage << std::endl;
-            m_logFile->flush();
+        std::string formatted = formatMessage(aLevel, aMessage);
+
+        for (const auto& target : m_targets) {
+            if (aLevel >= target.level) {
+                target.handler(formatted);
+            }
         }
     }
 
     class LogStream {
      public:
-        explicit LogStream(Logger::LogLevel aLevel) : m_level(aLevel) {}
+        explicit LogStream(LogLevel aLevel) : m_level(aLevel) {}
         ~LogStream() { Logger::getInstance().log(m_level, m_buffer.str()); }
 
         template<typename T>
@@ -82,39 +96,34 @@ class Logger{
         std::ostringstream m_buffer;
     };
 
-    static void trace_msg(const std::string& aMsg) {
-        getInstance().log(LogLevel::TRACE, aMsg);
-    }
+    static void trace_msg(const std::string& msg) { getInstance().log(LogLevel::TRACE, msg); }
+    static void debug_msg(const std::string& msg) { getInstance().log(LogLevel::DEBUG, msg); }
+    static void info_msg(const std::string& msg) { getInstance().log(LogLevel::INFO, msg); }
+    static void warning_msg(const std::string& msg) { getInstance().log(LogLevel::WARNING, msg); }
+    static void error_msg(const std::string& msg) { getInstance().log(LogLevel::ERROR, msg); }
+    static void fatal_msg(const std::string& msg) { getInstance().log(LogLevel::FATAL, msg); }
 
-    static void debug_msg(const std::string& aMsg) {
-        getInstance().log(LogLevel::DEBUG, aMsg);
-    }
-
-    static void info_msg(const std::string& aMsg) {
-        getInstance().log(LogLevel::INFO, aMsg);
-    }
-
-    static void warning_msg(const std::string& aMsg) {
-        getInstance().log(LogLevel::WARNING, aMsg);
-    }
-
-    static void error_msg(const std::string& aMsg) {
-        getInstance().log(LogLevel::ERROR, aMsg);
-    }
-
-    static void fatal_msg(const std::string& aMsg) {
-        getInstance().log(LogLevel::FATAL, aMsg);
-    }
-
-    static LogStream trace()    { return LogStream(LogLevel::TRACE); }
-    static LogStream debug()    { return LogStream(LogLevel::DEBUG); }
-    static LogStream info()     { return LogStream(LogLevel::INFO); }
-    static LogStream warning()  { return LogStream(LogLevel::WARNING); }
-    static LogStream error()    { return LogStream(LogLevel::ERROR); }
-    static LogStream fatal()    { return LogStream(LogLevel::FATAL); }
+    static LogStream trace()   { return LogStream(LogLevel::TRACE); }
+    static LogStream debug()   { return LogStream(LogLevel::DEBUG); }
+    static LogStream info()    { return LogStream(LogLevel::INFO); }
+    static LogStream warning() { return LogStream(LogLevel::WARNING); }
+    static LogStream error()   { return LogStream(LogLevel::ERROR); }
+    static LogStream fatal()   { return LogStream(LogLevel::FATAL); }
 
  private:
-    Logger() = default;
+    Logger() {
+        // Default console output
+        // for messages
+        addHandler([](const std::string& aMessage) {
+            std::cout << aMessage << std::endl;
+        }, LogLevel::INFO);
+
+        // for errors
+        addHandler([](const std::string& aMessage) {
+            std::cerr << aMessage << std::endl;
+        }, LogLevel::ERROR);
+    }
+
     ~Logger() = default;
 
     Logger(const Logger&) = delete;
@@ -123,37 +132,41 @@ class Logger{
     Logger(Logger&&) = delete;
     Logger& operator=(Logger&&) = delete;
 
-    std::string logLevelToString(LogLevel aLevel) {
-        std::string result;
-        switch (aLevel) {
-            case LogLevel::TRACE: result = "TRACE"; break;
-            case LogLevel::DEBUG: result = "DEBUG"; break;
-            case LogLevel::INFO: result = "INFO"; break;
-            case LogLevel::WARNING: result = "WARNING"; break;
-            case LogLevel::ERROR: result = "ERROR"; break;
-            case LogLevel::FATAL: result = "FATAL"; break;
-            default: result = "UNKNOWN"; break;
+    bool shouldLog(LogLevel aLevel) {
+        for (const auto & target : m_targets) {
+            if (aLevel >= target.level) {
+                return false;
+            }
         }
-        return result;
+        return true;
+    }
+
+    std::string logLevelToString(LogLevel aLevel) {
+        switch (aLevel) {
+            case LogLevel::TRACE: return "TRACE";
+            case LogLevel::DEBUG: return "DEBUG";
+            case LogLevel::INFO: return "INFO";
+            case LogLevel::WARNING: return "WARNING";
+            case LogLevel::ERROR: return "ERROR";
+            case LogLevel::FATAL: return "FATAL";
+            default: return "UNKNOWN";
+        }
     }
 
     std::string getCurrentTime() {
-        using std::chrono::system_clock;
-        using std::chrono::duration_cast;
-        using std::chrono::microseconds;
-
+        using namespace std::chrono;
         auto now = system_clock::now();
         auto time = system_clock::to_time_t(now);
-        auto msec = duration_cast<microseconds>(
+        auto usec = duration_cast<microseconds>(
             now.time_since_epoch()) % 1'000'000;
 
-        std::tm localTime{};
+        std::tm localTime;
         localtime_r(&time, &localTime);
 
-        std::ostringstream ts;
-        ts << std::put_time(&localTime, "%Y-%m-%d %H:%M:%S")
-            << "." << std::setfill('0') << std::setw(6) << msec.count();
-        return ts.str();
+        std::ostringstream oss;
+        oss << std::put_time(&localTime, "%Y-%m-%d %H:%M:%S")
+            << "." << std::setfill('0') << std::setw(6) << usec.count();
+        return oss.str();
     }
 
     std::string formatMessage(LogLevel aLevel,
@@ -168,19 +181,18 @@ class Logger{
 #ifdef LOGGER_USE_MUTEX
     std::mutex m_mutex;
 #endif
-    std::unique_ptr<std::ofstream> m_logFile;
+    std::vector<Target> m_targets;
 };
 
 #define LOG_ENABLE_FILE(aFile)  Logger::getInstance().setLogFile(aFile)
-#define LOG_DISABLE_FILE()      Logger::getInstance().setLogFile("")
+#define LOG_DISABLE_FILE()      Logger::getInstance().addHandler([](const std::string&) {}, Logger::LogLevel::FATAL)
 
-
-#define LOG_TRACE_MSG(aMsg)     Logger::trace_msg(aMsg)
-#define LOG_DEBUG_MSG(aMsg)     Logger::debug_msg(aMsg)
-#define LOG_INFO_MSG(aMsg)      Logger::info_msg(aMsg)
-#define LOG_WARNING_MSG(aMsg)   Logger::warning_msg(aMsg)
-#define LOG_ERROR_MSG(aMsg)     Logger::error_msg(aMsg)
-#define LOG_FATAL_MSG(aMsg)     Logger::fatal_msg(aMsg)
+#define LOG_TRACE_MSG(aMessage)     Logger::trace_msg(aMessage)
+#define LOG_DEBUG_MSG(aMessage)     Logger::debug_msg(aMessage)
+#define LOG_INFO_MSG(aMessage)      Logger::info_msg(aMessage)
+#define LOG_WARNING_MSG(aMessage)   Logger::warning_msg(aMessage)
+#define LOG_ERROR_MSG(aMessage)     Logger::error_msg(aMessage)
+#define LOG_FATAL_MSG(aMessage)     Logger::fatal_msg(aMessage)
 
 #define LOG_TRACE       Logger::trace()
 #define LOG_DEBUG       Logger::debug()
